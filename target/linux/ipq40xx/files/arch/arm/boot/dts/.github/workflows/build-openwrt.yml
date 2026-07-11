@@ -1,7 +1,7 @@
 name: Build Custom OpenWrt & Merge Full Flash Dump
 
 on:
-  workflow_dispatch:
+  workflow_dispatch: # تشغيل يدوي بضغطة زر
 
 jobs:
   build_and_merge:
@@ -33,15 +33,45 @@ jobs:
         ./scripts/feeds update -a
         ./scripts/feeds install -a
 
-    - name: Inject Custom Board Map & Settings
+    - name: Inject Custom Board Map & Settings (الكود المطور)
       run: |
+        # 1. إنشاء مجلد خريطة العتاد ونسخ ملف الـ DTS إذا كان موجوداً
         mkdir -p openwrt/target/linux/ipq40xx/files/arch/arm/boot/dts/
-        cp target/linux/ipq40xx/files/arch/arm/boot/dts/qcom-ipq4019-gapd7200.dts openwrt/target/linux/ipq40xx/files/arch/arm/boot/dts/
+        if [ -f "target/linux/ipq40xx/files/arch/arm/boot/dts/qcom-ipq4019-gapd7200.dts" ]; then
+          cp target/linux/ipq40xx/files/arch/arm/boot/dts/qcom-ipq4019-gapd7200.dts openwrt/target/linux/ipq40xx/files/arch/arm/boot/dts/
+        fi
         
+        # 2. إنشاء سكريبت الإعدادات تلقائياً داخل السيرفر لضمان عدم توقف البناء
         mkdir -p openwrt/files/etc/uci-defaults/
-        cp files/etc/uci-defaults/99-custom-settings openwrt/files/etc/uci-defaults/
+        cat << 'EOF' > openwrt/files/etc/uci-defaults/99-custom-settings
+        #!/bin/sh
+
+        # إيقاف خادم DHCP نهائياً لمنع القفلات وتداخل الآيبيهات مع الميكروتيك
+        uci set dhcp.lan.ignore='1'
+        uci commit dhcp
+
+        # دمج بورت الـ WAN مع الـ LAN في جسر موحد (Bridge Switch)
+        uci del network.wan
+        uci del network.wan6
+        uci add_list network.lan.ports='eth0.5'
+        uci commit network
+
+        # تفعيل الوايرلس (الواي فاي) تلقائياً للترددين بعد ضبط المصنع
+        uci set wireless.radio0.disabled='0'
+        uci set wireless.radio1.disabled='0'
+        uci set wireless.default_radio0.ssid='Davolink-2.4G'
+        uci set wireless.default_radio1.ssid='Davolink-5G'
+        uci set wireless.default_radio0.encryption='none'
+        uci set wireless.default_radio1.encryption='none'
+        uci commit wireless
+
+        exit 0
+        EOF
+        
+        # إعطاء صلاحية التنفيذ للسكريبت المصنوع
         chmod +x openwrt/files/etc/uci-defaults/99-custom-settings
 
+        # 3. حقن وتعديل الـ Makefile لإدراج جهاز Davolink GAPD-7200 رسمياً
         echo -e '\n\ndefine Device/davolink_gapd-7200\n\t$(call Device/CcNewifiNetgear)\n\tDEVICE_VENDOR := Davolink\n\tDEVICE_MODEL := GAPD-7200\n\tDEVICE_DTS := qcom-ipq4019-gapd7200\n\tKERNEL_SIZE := 4096k\n\tIMAGE_SIZE := 122880k\n\tBLOCKSIZE := 128k\n\tPAGESIZE := 2048\n\tIMAGES := sysupgrade.bin\nendef\nTARGET_DEVICES += davolink_gapd-7200' >> openwrt/target/linux/ipq40xx/image/generic.mk
 
     - name: Load Config Seed
@@ -55,15 +85,15 @@ jobs:
         cd openwrt
         make -j$(nproc) || make -j1 V=s
 
-    - name: Execute Cloud Merge (صناعة النسخة المكتملة 100%)
+    - name: Execute Cloud Merge (صناعة الدامب الكامل المكتمل)
       run: |
-        # 1. نسخ النظام المجمع حديثاً إلى المجلد الرئيسي
+        # 1. نسخ ملف نظام OpenWrt المجمع حديثاً إلى المجلد الرئيسي
         cp openwrt/bin/targets/ipq40xx/generic/*davolink_gapd-7200*.bin openwrt_kernel.bin
         
-        # 2. إنشاء قالب فلاشة كامل ممتلئ بحماية FF لحفظ المساحات الفارغة
+        # 2. إنشاء مساحة فلاشة فارغة بحجم 32 ميجابايت ممتلئة بـ FF لحماية الـ Sectors
         dd if=/dev/zero ibs=1M count=32 | tr "\000" "\377" > FULL_FLASH_DUMP_MUKTAMIL.bin
         
-        # 3. حقن الأقسام العتادية الأصلية في عناوينها الفيزيائية بدقة بناءً على الخريطة
+        # 3. حقن الأقسام العتادية والبرمجية الأصلية في أماكنها الفيزيائية الدقيقة
         dd if=SBL1.bin of=FULL_FLASH_DUMP_MUKTAMIL.bin bs=1K seek=0 conv=notrunc
         dd if=MIBIB.bin of=FULL_FLASH_DUMP_MUKTAMIL.bin bs=1K seek=256 conv=notrunc
         dd if=BOOTCONFIG.bin of=FULL_FLASH_DUMP_MUKTAMIL.bin bs=1K seek=512 conv=notrunc
@@ -75,7 +105,7 @@ jobs:
         dd if=APPSBLENV.bin of=FULL_FLASH_DUMP_MUKTAMIL.bin bs=1K seek=4352 conv=notrunc
         dd if=ART.bin of=FULL_FLASH_DUMP_MUKTAMIL.bin bs=1K seek=4608 conv=notrunc
         
-        # 4. حقن نظام OpenWrt الجديد والمخصص داخل مساحة الـ UBI الحرة مباشرة
+        # 4. حقن نظام تشغيل OpenWrt المطور الجديد في بداية مساحة الـ UBI الحرة
         dd if=openwrt_kernel.bin of=FULL_FLASH_DUMP_MUKTAMIL.bin bs=1K seek=5120 conv=notrunc
 
     - name: Upload Full Flash Dump File
@@ -83,4 +113,3 @@ jobs:
       with:
         name: Davolink-GAPD7200-MUKTAMIL-Dump
         path: FULL_FLASH_DUMP_MUKTAMIL.bin
-
