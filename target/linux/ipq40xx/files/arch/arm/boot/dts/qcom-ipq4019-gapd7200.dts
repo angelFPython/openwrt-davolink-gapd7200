@@ -1,272 +1,180 @@
 /dts-v1/;
 
-#include "ipq4019.dtsi"
-#include <dt-bindings/gpio/gpio.h>
-#include <dt-bindings/input/input.h>
-#include <dt-bindings/soc/qcom,tcsr.h>
-
 / {
+	#address-cells = <0x01>;
+	#size-cells = <0x01>;
 	model = "DAVOLINK GAPD-7200";
-	compatible = "davolink,gapd-7200", "qcom,ipq4019";
+	compatible = "Davolink,gapd-7200", "qcom,ipq4019";
 
 	chosen {
 		bootargs = "ubi.mtd=ubi rootfstype=squashfs";
-		stdout-path = "serial0:115200n8";
 	};
 
 	aliases {
-		spi0 = &spi_0;
-		ethernet0 = &gmac;
-		led-boot = &led_wan;
-		led-failsafe = &led_wan;
-		led-upgrade = &led_wan;
+		spi0 = "/soc/spi@78b5000";
+		ethernet0 = "/soc/ethernet@c080000";
 	};
 
 	memory {
 		device_type = "memory";
-		reg = <0x80000000 0x10000000>; /* 256MB RAM */
+		reg = <0x80000000 0x10000000>;
 	};
 
-	keys {
-		compatible = "gpio-keys";
+	soc {
+		#address-cells = <0x01>;
+		#size-cells = <0x01>;
+		ranges;
+		compatible = "simple-bus";
 
-		reset {
-			label = "reset";
-			gpios = <&tlmm 63 GPIO_ACTIVE_LOW>;
-			linux,code = <KEY_RESTART>;
-		};
+		pinctrl@1000000 {
+			compatible = "qcom,ipq4019-pinctrl";
+			reg = <0x1000000 0x300000>;
+			gpio-controller;
+			gpio-ranges = <&tlmm 0 0 100>;
+			#gpio-cells = <0x02>;
+			interrupt-controller;
+			#interrupt-cells = <0x02>;
 
-		wps {
-			label = "wps";
-			gpios = <&tlmm 4 GPIO_ACTIVE_LOW>;
-			linux,code = <KEY_WPS_BUTTON>;
-		};
-	};
-
-	leds {
-		compatible = "gpio-leds";
-
-		wlan2G {
-			label = "green:wlan2g";
-			gpios = <&tlmm 3 GPIO_ACTIVE_LOW>;
-			linux,default-trigger = "phy0tpt";
-		};
-
-		wlan5G {
-			label = "green:wlan5g";
-			gpios = <&tlmm 2 GPIO_ACTIVE_LOW>;
-			linux,default-trigger = "phy1tpt";
-		};
-	};
-};
-
-&tlmm {
-	serial_pins: serial_pinmux {
-		mux {
-			pins = "gpio60", "gpio61";
-			function = "blsp_uart0";
-			bias-disable;
-		};
-	};
-
-	spi_0_pins: spi_0_pinmux {
-		mux {
-			function = "blsp_spi0";
-			pins = "gpio55", "gpio56", "gpio57";
-			drive-strength = <12>;
-			bias-disable;
-		};
-
-		mux_cs {
-			function = "gpio";
-			pins = "gpio54", "gpio59";
-			drive-strength = <2>;
-			bias-disable;
-			output-high;
-		};
-	};
-};
-
-&blsp1_uart1 {
-	pinctrl-0 = <&serial_pins>;
-	pinctrl-names = "default";
-	status = "okay";
-};
-
-&spi_0 {
-	pinctrl-0 = <&spi_0_pins>;
-	pinctrl-names = "default";
-	status = "okay";
-	cs-gpios = <&tlmm 54 GPIO_ACTIVE_HIGH>, <&tlmm 59 GPIO_ACTIVE_HIGH>;
-
-	flash@0 {
-		compatible = "jedec,spi-nor";
-		reg = <0>;
-		spi-max-frequency = <24000000>;
-
-		partitions {
-			compatible = "fixed-partitions";
-			#address-cells = <1>;
-			#size-cells = <1>;
-
-			partition@0 {
-				label = "SBL1";
-				reg = <0x00000000 0x00040000>;
-				read-only;
-			};
-
-			partition@40000 {
-				label = "MIBIB";
-				reg = <0x00040000 0x00020000>;
-				read-only;
-			};
-
-			partition@60000 {
-				label = "QSEE";
-				reg = <0x00060000 0x00060000>;
-				read-only;
-			};
-
-			partition@c0000 {
-				label = "CDT";
-				reg = <0x000c0000 0x00010000>;
-				read-only;
-			};
-
-			partition@d0000 {
-				label = "DDRPARAMS";
-				reg = <0x000d0000 0x00010000>;
-				read-only;
-			};
-
-			partition@e0000 {
-				label = "APPSBLENV";
-				reg = <0x000e0000 0x00010000>;
-			};
-
-			partition@f0000 {
-				label = "APPSBL";
-				reg = <0x000f0000 0x00080000>;
-				read-only;
-			};
-
-			art: partition@170000 {
-				label = "ART";
-				reg = <0x00170000 0x00010000>;
-				read-only;
-				compatible = "nvmem-cells";
-				#address-cells = <1>;
-				#size-cells = <1>;
-
-				precal_f0: precal@1000 {
-					reg = <0x1000 0x2f20>;
-				};
-
-				precal_f1: precal@5000 {
-					reg = <0x5000 0x2f20>;
+			tlmm: serial_pinmux {
+				mux {
+					pins = "gpio60", "gpio61";
+					function = "blsp_uart0";
+					bias-disable;
 				};
 			};
 
-			partition@180000 {
-				label = "BOOTCONFIG";
-				reg = <0x00180000 0x00040000>;
-				read-only;
-			};
+			spi_0_pinmux {
+				mux {
+					function = "blsp_spi0";
+					pins = "gpio55", "gpio56", "gpio57";
+					drive-strength = <0x0c>;
+					bias-disable;
+				};
 
-			config: partition@1c0000 {
-				label = "RESV";
-				reg = <0x001c0000 0x00240000>;
-				read-only;
-				compatible = "nvmem-cells";
-				#address-cells = <1>;
-				#size-cells = <1>;
-
-				macaddr_auth: macaddr@0 {
-					reg = <0x00 0x06>;
+				mux_cs {
+					function = "gpio";
+					pins = "gpio54", "gpio59";
+					drive-strength = <0x02>;
+					bias-disable;
+					output-high;
 				};
 			};
 		};
-	};
 
-	spi_nand@1 {
-		compatible = "spi-nand";
-		reg = <1>;
-		spi-max-frequency = <30000000>;
+		spi@78b5000 {
+			compatible = "qcom,spi-qup-v2.2.1";
+			reg = <0x78b5000 0x600>;
+			#address-cells = <0x01>;
+			#size-cells = <0x00>;
+			status = "okay";
 
-		partitions {
-			compatible = "fixed-partitions";
-			#address-cells = <1>;
-			#size-cells = <1>;
+			flash@0 {
+				compatible = "jedec,spi-nor";
+				reg = <0x00>;
+				spi-max-frequency = <24000000>;
+				#address-cells = <0x01>;
+				#size-cells = <0x01>;
 
-			partition@0 {
-				label = "ubi";
-				reg = <0x00000000 0x08000000>; /* 128MB Complete Partition */
+				partitions {
+					compatible = "fixed-partitions";
+					#address-cells = <0x01>;
+					#size-cells = <0x01>;
+
+					partition@0 {
+						label = "SBL1";
+						reg = <0x00 0x40000>;
+						read-only;
+					};
+
+					partition@40000 {
+						label = "MIBIB";
+						reg = <0x40000 0x20000>;
+						read-only;
+					};
+
+					partition@60000 {
+						label = "QSEE";
+						reg = <0x60000 0x60000>;
+						read-only;
+					};
+
+					partition@c0000 {
+						label = "CDT";
+						reg = <0xc0000 0x10000>;
+						read-only;
+					};
+
+					partition@d0000 {
+						label = "DDRPARAMS";
+						reg = <0xd0000 0x10000>;
+						read-only;
+					};
+
+					partition@e0000 {
+						label = "APPSBLENV";
+						reg = <0xe0000 0x10000>;
+					};
+
+					partition@f0000 {
+						label = "APPSBL";
+						reg = <0xf0000 0x80000>;
+						read-only;
+					};
+
+					art: partition@170000 {
+						label = "ART";
+						reg = <0x170000 0x10000>;
+						read-only;
+
+						precal_f0: precal@1000 {
+							reg = <0x1000 0x2f20>;
+						};
+
+						precal_f1: precal@5000 {
+							reg = <0x5000 0x2f20>;
+						};
+					};
+
+					partition@180000 {
+						label = "BOOTCONFIG";
+						reg = <0x180000 0x40000>;
+						read-only;
+					};
+
+					config: partition@1c0000 {
+						label = "RESV";
+						reg = <0x1c0000 0x240000>;
+						read-only;
+
+						macaddr_auth: macaddr@0 {
+							reg = <0x00 0x06>;
+						};
+					};
+				};
 			};
+
+			spi_nand@1 {
+				compatible = "spi-nand";
+				reg = <0x01>;
+				spi-max-frequency = <30000000>;
+
+				partitions {
+					compatible = "fixed-partitions";
+					#address-cells = <0x01>;
+					#size-cells = <0x01>;
+
+					partition@0 {
+						label = "ubi";
+						reg = <0x00 0x8000000>; /* مساحة الـ NAND بالكامل للسوفت وير */
+					};
+				};
+			};
+		};
+
+		ethernet@c080000 {
+			compatible = "qcom,ipq4019-ess-edma";
+			reg = <0xc080000 0x8000>;
+			status = "okay";
 		};
 	};
 };
-
-&crypto {
-	status = "okay";
-};
-
-&watchdog {
-	status = "okay";
-};
-
-&wifi0 {
-	status = "okay";
-	nvmem-cells = <&precal_f0>, <&macaddr_auth>;
-	nvmem-cell-names = "pre-calibration", "mac-address";
-	qcom,ath10k-calibration-variant = "DAVOLINK-GAPD-7200";
-};
-
-&wifi1 {
-	status = "okay";
-	nvmem-cells = <&precal_f1>, <&macaddr_auth>;
-	nvmem-cell-names = "pre-calibration", "mac-address";
-	mac-address-increment = <1>;
-	qcom,ath10k-calibration-variant = "DAVOLINK-GAPD-7200";
-};
-
-&switch {
-	status = "okay";
-};
-
-&gmac {
-	status = "okay";
-	nvmem-cells = <&macaddr_auth>;
-	nvmem-cell-names = "mac-address";
-};
-
-&switch_ports {
-	port@1 {
-		status = "okay";
-		label = "lan1";
-	};
-
-	port@2 {
-		status = "okay";
-		label = "lan2";
-	};
-
-	port@3 {
-		status = "okay";
-		label = "lan3";
-	};
-
-	port@4 {
-		status = "okay";
-		label = "lan4";
-	};
-
-	port@5 {
-		status = "okay";
-		label = "wan";
-	};
-};
-
-&mdio {
-	status = "okay";
-};
-
