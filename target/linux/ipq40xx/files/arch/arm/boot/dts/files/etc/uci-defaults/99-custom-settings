@@ -1,0 +1,23 @@
+#!/bin/sh
+
+# 1. إيقاف خادم DHCP نهائياً لمنع القفلات وتداخل الآيبيهات مع الميكروتيك
+uci set dhcp.lan.ignore='1'
+uci commit dhcp
+
+# 2. دمج بورت الـ WAN مع الـ LAN في جسر موحد (Bridge Switch)
+uci del network.wan
+uci del network.wan6
+uci add_list network.lan.ports='eth0.5'
+uci commit network
+
+# 3. تفعيل الوايرلس (الواي فاي) تلقائياً للترددين بعد ضبط المصنع
+uci set wireless.radio0.disabled='0'
+uci set wireless.radio1.disabled='0'
+uci set wireless.default_radio0.ssid='Davolink-2.4G'
+uci set wireless.default_radio1.ssid='Davolink-5G'
+uci set wireless.default_radio0.encryption='none'
+uci set wireless.default_radio1.encryption='none'
+uci commit wireless
+
+exit 0
+
