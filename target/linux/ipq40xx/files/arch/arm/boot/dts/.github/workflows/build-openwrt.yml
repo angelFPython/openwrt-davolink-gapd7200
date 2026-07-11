@@ -33,7 +33,7 @@ jobs:
         ./scripts/feeds update -a
         ./scripts/feeds install -a
 
-    - name: Inject Custom Board Map & Settings (الكود المطور)
+    - name: Inject Custom Board Map & Settings
       run: |
         # 1. إنشاء مجلد خريطة العتاد ونسخ ملف الـ DTS إذا كان موجوداً
         mkdir -p openwrt/target/linux/ipq40xx/files/arch/arm/boot/dts/
@@ -41,7 +41,7 @@ jobs:
           cp target/linux/ipq40xx/files/arch/arm/boot/dts/qcom-ipq4019-gapd7200.dts openwrt/target/linux/ipq40xx/files/arch/arm/boot/dts/
         fi
         
-        # 2. إنشاء سكريبت الإعدادات تلقائياً داخل السيرفر لضمان عدم توقف البناء
+        # 2. إنشاء سكريبت الإعدادات تلقائياً لحل مشكلة No such file نهائياً
         mkdir -p openwrt/files/etc/uci-defaults/
         cat << 'EOF' > openwrt/files/etc/uci-defaults/99-custom-settings
         #!/bin/sh
@@ -74,9 +74,25 @@ jobs:
         # 3. حقن وتعديل الـ Makefile لإدراج جهاز Davolink GAPD-7200 رسمياً
         echo -e '\n\ndefine Device/davolink_gapd-7200\n\t$(call Device/CcNewifiNetgear)\n\tDEVICE_VENDOR := Davolink\n\tDEVICE_MODEL := GAPD-7200\n\tDEVICE_DTS := qcom-ipq4019-gapd7200\n\tKERNEL_SIZE := 4096k\n\tIMAGE_SIZE := 122880k\n\tBLOCKSIZE := 128k\n\tPAGESIZE := 2048\n\tIMAGES := sysupgrade.bin\nendef\nTARGET_DEVICES += davolink_gapd-7200' >> openwrt/target/linux/ipq40xx/image/generic.mk
 
-    - name: Load Config Seed
+    - name: Load Config Seed (تعديل تلقائي لحل مشكلة No such file لملف الـ seed)
       run: |
-        cp seed.config openwrt/.config
+        # إنشاء ملف التكوين مباشرة في بيئة السيرفر مع دمج كافة الميزات المطلوبة
+        cat << 'EOF' > openwrt/.config
+        CONFIG_TARGET_ipq40xx=y
+        CONFIG_TARGET_ipq40xx_generic=y
+        CONFIG_TARGET_DEVICE_ipq40xx_generic_DEVICE_davolink_gapd-7200=y
+
+        # واجهة التحكم الرسومية المتقدمة LuCI
+        CONFIG_PACKAGE_luci=y
+        CONFIG_PACKAGE_luci-ssl=y
+
+        # دمج الميزات المطلوبة للشبكة
+        CONFIG_PACKAGE_kmod-eoip=y
+        CONFIG_PACKAGE_lldpd=y
+        CONFIG_PACKAGE_luci-app-watchcat=y
+        CONFIG_PACKAGE_luci-app-ttyd=y
+        EOF
+        
         cd openwrt
         make defconfig
 
