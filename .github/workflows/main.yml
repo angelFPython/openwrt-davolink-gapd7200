@@ -1,0 +1,86 @@
+name: Build Custom OpenWrt & Merge Full Flash Dump
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build_and_merge:
+    runs-on: ubuntu-22.04
+
+    steps:
+    - name: Checkout Repository
+      uses: actions/checkout@v4
+
+    - name: Initialize Environment Dependencies
+      env:
+        DEBIAN_FRONTEND: noninteractive
+      run: |
+        sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc
+        sudo -E apt-get -qq update
+        sudo -E apt-get -qq install -y ack antlr3 asciidoc autoconf automake autopoint binutils bison build-essential bzip2 ccache cmake cpio curl device-tree-compiler fastjar flex gawk gettext gcc-multilib g++-multilib git gperf haveged help2man intltool libc6-dev-i386 libelf-dev libglib2.0-dev libgmp3-dev libltdl-dev libmpc-dev libmpfr-dev libncurses5-dev libncursesw5-dev libreadline-dev libssl-dev libtool lrzsz mkisofs msmtp nano p7zip p7zip-full patch pkgconf python3 python3-pip qemu-utils rsync scons squashfs-tools subversion swig texinfo u-boot-tools upx-ucl unzip xmlto xz-utils zlib1g-dev libz-dev time xxd
+        sudo -E apt-get -qq autoremove --purge
+        sudo -E apt-get -qq clean
+
+    - name: Clone OpenWrt Source Code
+      run: |
+        git clone https://github.com/openwrt/openwrt.git openwrt
+        cd openwrt
+        git checkout openwrt-23.05
+
+    - name: Update & Install Feeds
+      run: |
+        cd openwrt
+        ./scripts/feeds update -a
+        ./scripts/feeds install -a
+
+    - name: Inject Custom Board Map & Settings
+      run: |
+        mkdir -p openwrt/target/linux/ipq40xx/files/arch/arm/boot/dts/
+        cp target/linux/ipq40xx/files/arch/arm/boot/dts/qcom-ipq4019-gapd7200.dts openwrt/target/linux/ipq40xx/files/arch/arm/boot/dts/
+        
+        mkdir -p openwrt/files/etc/uci-defaults/
+        cp files/etc/uci-defaults/99-custom-settings openwrt/files/etc/uci-defaults/
+        chmod +x openwrt/files/etc/uci-defaults/99-custom-settings
+
+        echo -e '\n\ndefine Device/davolink_gapd-7200\n\t$(call Device/CcNewifiNetgear)\n\tDEVICE_VENDOR := Davolink\n\tDEVICE_MODEL := GAPD-7200\n\tDEVICE_DTS := qcom-ipq4019-gapd7200\n\tKERNEL_SIZE := 4096k\n\tIMAGE_SIZE := 122880k\n\tBLOCKSIZE := 128k\n\tPAGESIZE := 2048\n\tIMAGES := sysupgrade.bin\nendef\nTARGET_DEVICES += davolink_gapd-7200' >> openwrt/target/linux/ipq40xx/image/generic.mk
+
+    - name: Load Config Seed
+      run: |
+        cp seed.config openwrt/.config
+        cd openwrt
+        make defconfig
+
+    - name: Compile Custom Firmware
+      run: |
+        cd openwrt
+        make -j$(nproc) || make -j1 V=s
+
+    - name: Execute Cloud Merge (صناعة النسخة المكتملة 100%)
+      run: |
+        # 1. نسخ النظام المجمع حديثاً إلى المجلد الرئيسي
+        cp openwrt/bin/targets/ipq40xx/generic/*davolink_gapd-7200*.bin openwrt_kernel.bin
+        
+        # 2. إنشاء قالب فلاشة كامل ممتلئ بحماية FF لحفظ المساحات الفارغة
+        dd if=/dev/zero ibs=1M count=32 | tr "\000" "\377" > FULL_FLASH_DUMP_MUKTAMIL.bin
+        
+        # 3. حقن الأقسام العتادية الأصلية في عناوينها الفيزيائية بدقة بناءً على الخريطة
+        dd if=SBL1.bin of=FULL_FLASH_DUMP_MUKTAMIL.bin bs=1K seek=0 conv=notrunc
+        dd if=MIBIB.bin of=FULL_FLASH_DUMP_MUKTAMIL.bin bs=1K seek=256 conv=notrunc
+        dd if=BOOTCONFIG.bin of=FULL_FLASH_DUMP_MUKTAMIL.bin bs=1K seek=512 conv=notrunc
+        dd if=CDT.bin of=FULL_FLASH_DUMP_MUKTAMIL.bin bs=1K seek=768 conv=notrunc
+        dd if=DDRPARAMS.bin of=FULL_FLASH_DUMP_MUKTAMIL.bin bs=1K seek=1024 conv=notrunc
+        dd if=QSEE.bin of=FULL_FLASH_DUMP_MUKTAMIL.bin bs=1K seek=1280 conv=notrunc
+        dd if=RESV.bin of=FULL_FLASH_DUMP_MUKTAMIL.bin bs=1K seek=2304 conv=notrunc
+        dd if=APPSBL.bin of=FULL_FLASH_DUMP_MUKTAMIL.bin bs=1K seek=3328 conv=notrunc
+        dd if=APPSBLENV.bin of=FULL_FLASH_DUMP_MUKTAMIL.bin bs=1K seek=4352 conv=notrunc
+        dd if=ART.bin of=FULL_FLASH_DUMP_MUKTAMIL.bin bs=1K seek=4608 conv=notrunc
+        
+        # 4. حقن نظام OpenWrt الجديد والمخصص داخل مساحة الـ UBI الحرة مباشرة
+        dd if=openwrt_kernel.bin of=FULL_FLASH_DUMP_MUKTAMIL.bin bs=1K seek=5120 conv=notrunc
+
+    - name: Upload Full Flash Dump File
+      uses: actions/upload-artifact@v4
+      with:
+        name: Davolink-GAPD7200-MUKTAMIL-Dump
+        path: FULL_FLASH_DUMP_MUKTAMIL.bin
+
