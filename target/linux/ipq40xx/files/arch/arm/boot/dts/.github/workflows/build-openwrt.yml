@@ -1,4 +1,4 @@
-Name: Build Custom OpenWrt & Merge Full Flash Dump
+name: Build Custom OpenWrt & Merge Full Flash Dump
 
 on:
   workflow_dispatch: # تشغيل يدوي بضغطة زر
