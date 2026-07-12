@@ -1,4 +1,4 @@
-name: Build Custom OpenWrt & Merge Full Flash Dump
+Name: Build Custom OpenWrt & Merge Full Flash Dump
 
 on:
   workflow_dispatch: # تشغيل يدوي بضغطة زر
@@ -41,42 +41,18 @@ jobs:
           cp target/linux/ipq40xx/files/arch/arm/boot/dts/qcom-ipq4019-gapd7200.dts openwrt/target/linux/ipq40xx/files/arch/arm/boot/dts/
         fi
         
-        # 2. إنشاء سكريبت الإعدادات تلقائياً لحل مشكلة No such file نهائياً
-        mkdir -p openwrt/files/etc/uci-defaults/
-        cat << 'EOF' > openwrt/files/etc/uci-defaults/99-custom-settings
-        #!/bin/sh
-
-        # إيقاف خادم DHCP نهائياً لمنع القفلات وتداخل الآيبيهات مع الميكروتيك
-        uci set dhcp.lan.ignore='1'
-        uci commit dhcp
-
-        # دمج بورت الـ WAN مع الـ LAN في جسر موحد (Bridge Switch)
-        uci del network.wan
-        uci del network.wan6
-        uci add_list network.lan.ports='eth0.5'
-        uci commit network
-
-        # تفعيل الوايرلس (الواي فاي) تلقائياً للترددين بعد ضبط المصنع
-        uci set wireless.radio0.disabled='0'
-        uci set wireless.radio1.disabled='0'
-        uci set wireless.default_radio0.ssid='Davolink-2.4G'
-        uci set wireless.default_radio1.ssid='Davolink-5G'
-        uci set wireless.default_radio0.encryption='none'
-        uci set wireless.default_radio1.encryption='none'
-        uci commit wireless
-
-        exit 0
-        EOF
-        
-        # إعطاء صلاحية التنفيذ للسكريبت المصنوع
-        chmod +x openwrt/files/etc/uci-defaults/99-custom-settings
+        # 2. جلب ودمج مجلد الـ files المخصص من مستودعك (الملفات التي رفعتها بالمتصفح)
+        if [ -d "files" ]; then
+          echo "تم العثور على مجلد files المخصص، جاري دمجه مع السوفت وير..."
+          mkdir -p openwrt/files
+          cp -r files/* openwrt/files/
+        fi
 
         # 3. حقن وتعديل الـ Makefile لإدراج جهاز Davolink GAPD-7200 رسمياً
         echo -e '\n\ndefine Device/davolink_gapd-7200\n\t$(call Device/CcNewifiNetgear)\n\tDEVICE_VENDOR := Davolink\n\tDEVICE_MODEL := GAPD-7200\n\tDEVICE_DTS := qcom-ipq4019-gapd7200\n\tKERNEL_SIZE := 4096k\n\tIMAGE_SIZE := 122880k\n\tBLOCKSIZE := 128k\n\tPAGESIZE := 2048\n\tIMAGES := sysupgrade.bin\nendef\nTARGET_DEVICES += davolink_gapd-7200' >> openwrt/target/linux/ipq40xx/image/generic.mk
 
     - name: Load Config Seed
       run: |
-        # إنشاء ملف التكوين مباشرة في بيئة السيرفر
         cat << 'EOF' > openwrt/.config
         CONFIG_TARGET_ipq40xx=y
         CONFIG_TARGET_ipq40xx_generic=y
@@ -101,46 +77,8 @@ jobs:
         cd openwrt
         make -j$(nproc) || make -j1 V=s
 
-    - name: Execute Cloud Merge (صناعة الدامب الكامل المكتمل)
-      run: |
-        # 1. البحث الذكي عن الفيرموير المجمع ونسخه كملف رئيسي
-        find openwrt/bin/targets/ipq40xx/generic/ -type f -name "*sysupgrade.bin" -o -name "*.bin" | head -n 1 | xargs -I {} cp {} openwrt_kernel.bin
-        
-        # التأكد من نجاح العثور على الملف
-        if [ ! -f openwrt_kernel.bin ]; then
-          echo "خطأ: لم يتم العثور على ملف نظام OpenWrt المجمع!"
-          exit 1
-        fi
-
-        # 2. إنشاء مساحة فلاشة فارغة بحجم 32 ميجابايت ممتلئة بـ FF
-        dd if=/dev/zero ibs=1M count=32 | tr "\000" "\377" > FULL_FLASH_DUMP_MUKTAMIL.bin
-        
-        # 3. التأكد من وجود ملفات البوت والتقسيم الأصلية أو توليد مساحات محجوزة لها لتجنب توقف السيرفر
-        for part in SBL1 MIBIB BOOTCONFIG CDT DDRPARAMS QSEE RESV APPSBL APPSBLENV ART; do
-          if [ ! -f "${part}.bin" ]; then
-            echo "تنبيه: ملف ${part}.bin غير موجود، سيتم تخصيص مساحة فارغة له في الدامب"
-            touch "${part}.bin"
-          fi
-        done
-
-        # 4. حقن الأقسام العتادية والبرمجية في أماكنها الفيزيائية الدقيقة
-        dd if=SBL1.bin of=FULL_FLASH_DUMP_MUKTAMIL.bin bs=1K seek=0 conv=notrunc
-        dd if=MIBIB.bin of=FULL_FLASH_DUMP_MUKTAMIL.bin bs=1K seek=256 conv=notrunc
-        dd if=BOOTCONFIG.bin of=FULL_FLASH_DUMP_MUKTAMIL.bin bs=1K seek=512 conv=notrunc
-        dd if=CDT.bin of=FULL_FLASH_DUMP_MUKTAMIL.bin bs=1K seek=768 conv=notrunc
-        dd if=DDRPARAMS.bin of=FULL_FLASH_DUMP_MUKTAMIL.bin bs=1K seek=1024 conv=notrunc
-        dd if=QSEE.bin of=FULL_FLASH_DUMP_MUKTAMIL.bin bs=1K seek=1280 conv=notrunc
-        dd if=RESV.bin of=FULL_FLASH_DUMP_MUKTAMIL.bin bs=1K seek=2304 conv=notrunc
-        dd if=APPSBL.bin of=FULL_FLASH_DUMP_MUKTAMIL.bin bs=1K seek=3328 conv=notrunc
-        dd if=APPSBLENV.bin of=FULL_FLASH_DUMP_MUKTAMIL.bin bs=1K seek=4352 conv=notrunc
-        dd if=ART.bin of=FULL_FLASH_DUMP_MUKTAMIL.bin bs=1K seek=4608 conv=notrunc
-        
-        # 5. حقن نظام تشغيل OpenWrt المطور الجديد في بداية مساحة الـ UBI الحرة (5MB)
-        dd if=openwrt_kernel.bin of=FULL_FLASH_DUMP_MUKTAMIL.bin bs=1K seek=5120 conv=notrunc
-
-    - name: Upload Full Flash Dump File
+    - name: Upload Custom Firmware (الملف الصافي للتحديث)
       uses: actions/upload-artifact@v4
       with:
-        name: Davolink-GAPD7200-MUKTAMIL-Dump
-        path: FULL_FLASH_DUMP_MUKTAMIL.bin
-
+        name: OpenWrt-Davolink-GAPD7200-Firmware
+        path: openwrt/bin/targets/ipq40xx/generic/*sysupgrade.bin
